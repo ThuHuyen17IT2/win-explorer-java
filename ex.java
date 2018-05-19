@@ -1,4 +1,4 @@
-package pk;
+package explorer;
 
 import java.awt.BorderLayout;
 import java.awt.FlowLayout;
@@ -20,6 +20,7 @@ import javax.swing.table.*;
 import javax.swing.filechooser.FileSystemView;
 
 import javax.imageio.ImageIO;
+import javax.naming.spi.DirectoryManager;
 
 import java.util.Date;
 import java.util.List;
@@ -27,11 +28,11 @@ import java.util.ArrayList;
 
 import java.io.*;
 import java.nio.channels.FileChannel;
-
+import java.nio.file.Files;
 import java.net.URL;
 
-
-public class ex {
+@SuppressWarnings("unused")
+public class FileManager {
 
     /** Title of the application */
     public static final String APP_TITLE = "FileMan";
@@ -61,8 +62,6 @@ public class ex {
 
     /* File controls. */
     private JButton openFile;
-    private JButton printFile;
-    private JButton editFile;
     private JButton deleteFile;
     private JButton newFile;
     private JButton copyFile;
@@ -215,38 +214,11 @@ public class ex {
             });
             toolBar.add(openFile);
 
-            editFile = new JButton("Edit");
-            editFile.setMnemonic('e');
-            editFile.addActionListener(new ActionListener(){
-                public void actionPerformed(ActionEvent ae) {
-                    try {
-                        desktop.edit(currentFile);
-                    } catch(Throwable t) {
-                        showThrowable(t);
-                    }
-                }
-            });
-            toolBar.add(editFile);
-
-            printFile = new JButton("Print");
-            printFile.setMnemonic('p');
-            printFile.addActionListener(new ActionListener(){
-                public void actionPerformed(ActionEvent ae) {
-                    try {
-                        desktop.print(currentFile);
-                    } catch(Throwable t) {
-                        showThrowable(t);
-                    }
-                }
-            });
-            toolBar.add(printFile);
+     
 
             // Check the actions are supported on this platform!
             openFile.setEnabled(desktop.isSupported(Desktop.Action.OPEN));
-            editFile.setEnabled(desktop.isSupported(Desktop.Action.EDIT));
-            printFile.setEnabled(desktop.isSupported(Desktop.Action.PRINT));
-
-            toolBar.addSeparator();
+                     toolBar.addSeparator();
 
             newFile = new JButton("New");
             newFile.setMnemonic('n');
@@ -259,11 +231,16 @@ public class ex {
 
             copyFile = new JButton("Copy");
             copyFile.setMnemonic('c');
-            copyFile.addActionListener(new ActionListener(){
-                public void actionPerformed(ActionEvent ae) {
-                    showErrorMessage("'Copy' not implemented.", "Not implemented.");
-                }
-            });
+            copyFile.addActionListener(new ActionListener() {
+                    public void actionPerformed(ActionEvent ae)  {
+                    	try { 
+                    	      copyfoder(currentFile);
+                    	      showErrorMessage("the foder","be copied");
+                        } catch(Exception e) {
+                        	
+                        }
+                    }
+            	});
             toolBar.add(copyFile);
 
             JButton renameFile = new JButton("Rename");
@@ -273,7 +250,7 @@ public class ex {
                     renameFile();
                 }
             });
-            toolBar.add(renameFile);
+			toolBar.add(renameFile);
 
             deleteFile = new JButton("Delete");
             deleteFile.setMnemonic('d');
@@ -343,6 +320,80 @@ public class ex {
         }
         // not found!
         return null;
+    }
+    private void newFile() {
+        if (currentFile==null) {
+            showErrorMessage("No location selected for new file.","Select Location");
+            return;
+        }
+
+        if (newFilePanel==null) {
+            newFilePanel = new JPanel(new BorderLayout(3,3));
+
+            JPanel southRadio = new JPanel(new GridLayout(1,0,2,2));
+            newTypeFile = new JRadioButton("File", true);
+            JRadioButton newTypeDirectory = new JRadioButton("Directory");
+            ButtonGroup bg = new ButtonGroup();
+            bg.add(newTypeFile);
+            bg.add(newTypeDirectory);
+            southRadio.add( newTypeFile );
+            southRadio.add( newTypeDirectory );
+
+            name = new JTextField(15);
+
+            newFilePanel.add( new JLabel("Name"), BorderLayout.WEST );
+            newFilePanel.add( name );
+            newFilePanel.add( southRadio, BorderLayout.SOUTH );
+        }
+
+        int result = JOptionPane.showConfirmDialog(
+            gui,
+            newFilePanel,
+            "Create File",
+            JOptionPane.OK_CANCEL_OPTION);
+        if (result==JOptionPane.OK_OPTION) {
+            try {
+                boolean created;
+                File parentFile = currentFile;
+                if (!parentFile.isDirectory()) {
+                    parentFile = parentFile.getParentFile();
+                }
+                File file = new File( parentFile, name.getText() );
+                if (newTypeFile.isSelected()) {
+                    created = file.createNewFile();
+                } else {
+                    created = file.mkdir();
+                }
+                if (created) {
+
+                    TreePath parentPath = findTreePath(parentFile);
+                    DefaultMutableTreeNode parentNode =
+                        (DefaultMutableTreeNode)parentPath.getLastPathComponent();
+
+                    if (file.isDirectory()) {
+                        // add the new node..
+                        DefaultMutableTreeNode newNode = new DefaultMutableTreeNode(file);
+
+                        TreePath currentPath = findTreePath(currentFile);
+                        @SuppressWarnings("unused")
+						DefaultMutableTreeNode currentNode =
+                            (DefaultMutableTreeNode)currentPath.getLastPathComponent();
+
+                        treeModel.insertNodeInto(newNode, parentNode, parentNode.getChildCount());
+                    }
+
+                    showChildren(parentNode);
+                } else {
+                    String msg = "The file '" +
+                        file +
+                        "' could not be created.";
+                    showErrorMessage(msg, "Create Failed");
+                }
+            } catch(Throwable t) {
+                showThrowable(t);
+            }
+        }
+        gui.repaint();
     }
 
     private void renameFile() {
@@ -437,11 +488,54 @@ public class ex {
         }
         gui.repaint();
     }
-
-    private void newFile() {
+    private void copyfoder(File src) throws IOException {
+    	// src: đối tượng nguồn (thư mục, file cần copy)
+   		// dest: đối tượng đích (thư mục đích)
+       File dest = newFiletocopy();
+   		// kiểm tra đối tượng có phải là thư mục không
+   		if (src.isDirectory()) {
+        // lấy danh sách tên các thư mục, file chứa trong thư mục nguồn
+   			String files[] = src.list();
+    
+   			for (String file : files) {
+   				// tạo ra các đối tượng thuộc lớp File cho các file và thư mục
+   				// từ danh sách đã get ở trên
+   				File srcFile = new File(src, file);
+   				@SuppressWarnings("unused")
+				File destFile = new File(dest, file);
+   				// thực hiện đệ quy (gọi lại phương thức copyFolder)
+   				copyfoder(srcFile);
+   			}
+    
+   		} else { // nếu là file thì thực hiện copy
+    
+   			// ý tưởng copy file ở đây là đọc nội dung file
+   			// sau đó ghi nội dung file đó vào file ở thư mục đích
+    
+   			// Sử dụng bytes stream để hỗ trợ việc đọc tất cả các file
+   			InputStream in = new FileInputStream(src);
+   			OutputStream out = new FileOutputStream(dest);
+    
+   			byte[] buffer = new byte[1024];
+    
+   			int length;
+   			// đọc file dưới dạng byte
+   			// sau đó ghi vào file đích
+   			while ((length = in.read(buffer)) > 0) {
+   				out.write(buffer, 0, length);
+   			}
+    
+   			// đóng luồng
+   			in.close();
+   			out.close();
+   		 
+   		}
+   	}
+	
+    private File newFiletocopy() {
         if (currentFile==null) {
             showErrorMessage("No location selected for new file.","Select Location");
-            return;
+            return currentFile;
         }
 
         if (newFilePanel==null) {
@@ -510,6 +604,7 @@ public class ex {
             }
         }
         gui.repaint();
+		return currentFile;
     }
 
     private void showErrorMessage(String errorMessage, String errorTitle) {
@@ -648,7 +743,8 @@ public class ex {
         gui.repaint();
     }
 
-    public static boolean copyFile(File from, File to) throws IOException {
+    @SuppressWarnings({ "resource", "finally" })
+	public static boolean copyFile(File from, File to) throws IOException {
 
         boolean created = to.createNewFile();
 
@@ -690,7 +786,7 @@ public class ex {
                 JFrame f = new JFrame(APP_TITLE);
                 f.setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
 
-                ex fileManager = new ex();
+                FileManager fileManager = new FileManager();
                 f.setContentPane(fileManager.getGui());
 
                 try {
@@ -714,6 +810,7 @@ public class ex {
 }
 
 /** A TableModel to hold File[]. */
+@SuppressWarnings("serial")
 class FileTableModel extends AbstractTableModel {
 
     private File[] files;
@@ -809,6 +906,7 @@ class FileTableModel extends AbstractTableModel {
 }
 
 /** A TreeCellRenderer for a File. */
+@SuppressWarnings("serial")
 class FileTreeCellRenderer extends DefaultTreeCellRenderer {
 
     private FileSystemView fileSystemView;
@@ -846,5 +944,4 @@ class FileTreeCellRenderer extends DefaultTreeCellRenderer {
         }
 
         return label;
-    }
-}
+    }}
